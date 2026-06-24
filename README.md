@@ -11,7 +11,7 @@ for testing recursive query performance, floating-point precision, and computati
 
 A benchmark suite that:
 - Computes the famous [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set) using SQL recursive CTEs
-- Tests multiple SQL engines, currently just DuckDB and a Python implementation for reference.
+- Tests multiple SQL engines — ClickHouse, chDB, DuckDB, ArrowDatafusion, SQLite — plus NumPy and Python implementations for reference.
 - Generates beautiful fractal images as proof of correct computation
 - Reveals which database / SQL engine renders infinity fastest
 
@@ -31,24 +31,33 @@ python main.py
 
 ## Current Benchmark Results
 
-Current results on 1400x800 pixels, 256 max iterations, Macbook Pro M4 Max:
+Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
 
-| 🏆 | Engine/Implementation                      | Time (ms) | Relative Performance |
-|----|--------------------------------------------|-----------|----------------------|
-| *  | Mac Metal GPU (unfair, but the true limit) | 0.77 ms   | ∞ 😵                 |
-| 1  | NumPy (vectorized, unrolled)               | 664 ms    | **0.78x** ⭐         |
-| 2  | ArrowDatafusion (SQL)                      | 848 ms    | 1.00x (baseline)     |
-| 3  | ClickHouse (SQL)                           | 1,039 ms  | 1.23x slower         |
-| 3  | chDB (SQL)                                 | 1,541 ms  | 1.82x slower         |
-| 4  | DuckDB (SQL)                               | 1,839 ms  | 2.17x slower         |
-| 5  | FasterPybrot                               | 2,654 ms  | 3.13x slower         |
-| 6  | FastPybrot                                 | 2,875 ms  | 3.39x slower         |
-| 7  | Pure Python                                | 3,070 ms  | 3.62x slower         |
-| 8  | SQLite (SQL)                               | 42,565 ms | 50.2x slower         |
+| 🏆 | Engine/Implementation                       | Time (ms)  | Relative Performance |
+|----|---------------------------------------------|------------|----------------------|
+| *  | Mac Metal GPU (unfair, but the true limit)¹ | 0.77 ms    | ∞ 😵                 |
+| 1  | ClickHouse (SQL)                            | 518 ms     | **0.52x** ⭐         |
+| 2  | NumPy (vectorized, unrolled)                | 715 ms     | 0.72x                |
+| 3  | chDB (SQL)                                  | 782 ms     | 0.79x                |
+| 4  | ArrowDatafusion (SQL)                       | 995 ms     | 1.00x (baseline)     |
+| 5  | DuckDB (SQL)                                | 2,011 ms   | 2.02x slower         |
+| 6  | FasterPybrot                                | 3,850 ms   | 3.87x slower         |
+| 7  | FastPybrot                                  | 4,370 ms   | 4.39x slower         |
+| 8  | Pure Python                                 | 5,049 ms   | 5.07x slower         |
+| 9  | SQLite (SQL)                                | 149,968 ms | 150.7x slower        |
 
-**Winner overall: NumPy** - Just 17% faster than ArrowDatafusion using loop unrolling and vectorized operations!
+**Winner overall: ClickHouse** — the only engine to beat hand-vectorized NumPy, and by a comfortable margin. End-to-end wall-clock, including launching `clickhouse local` as a subprocess and reading the result back.
 
-**Winner SQL: ArrowDatafusion** - Incredibly fast, nearly matching optimized NumPy performance!
+**Winner SQL: ClickHouse** — ~1.9x faster than the next SQL engine (ArrowDatafusion), and ~3.9x faster than DuckDB.
+
+How ClickHouse gets there (all on the **latest master build**, `curl https://clickhouse.com/ | sh`):
+- **Parallelized recursive CTE.** Master fans the recursion's per-iteration work across all cores (~1.7x over a single thread); older builds ran it single-threaded.
+- **jemalloc page-decay tuning.** The recursion allocates and frees a block every iteration. On macOS the build's effective `dirty_decay_ms` behaves like `0` (purge dirty pages immediately), so every free triggers a `madvise()` syscall — pure syscall overhead that also serializes the threads, and it roughly *doubles* the runtime. `clickbrot.py` runs with `MALLOC_CONF=dirty_decay_ms:5000`, which lets jemalloc reuse those pages within the query while still returning them to the OS ~5 s later (so it's safe for a long-running process, unlike `dirty_decay_ms:-1`). This points at a real ClickHouse issue worth fixing upstream — the macOS default purges far too eagerly for an allocation-churning workload.
+- **Lean query.** Only the pixel coordinates flow through the recursion (as narrow `UInt16`); the complex-plane mapping is recomputed on the fly, and the final `ORDER BY` is replaced by a NumPy scatter.
+
+`chDB` is the very same ClickHouse engine embedded in-process (its embedded 26.5.1 isn't built with jemalloc, so it never hits the decay issue, but its recursive CTE doesn't parallelize — hence it lands behind the parallel master binary). All SQL engines produce a pixel-for-pixel identical image.
+
+¹ The GPU figure is the original author's MacBook Pro M4 Max measurement, kept as the theoretical "true limit" reference; all other rows are re-measured on this M3 Max.
 
 ## How It Works
 
@@ -122,8 +131,9 @@ Higher values = more detail, longer computation time.
 ## Known Engine Compatibility
 
 ### ✅ Works Great
-- **NumPy** - Highly optimized with loop unrolling and vectorized operations (fastest!)
-- **ClickHouse** - Excellent performance, full precision
+- **ClickHouse** - The fastest engine in the benchmark, beating even vectorized NumPy. Full `Float64` precision, parallelized recursive CTE across all cores (run via the standalone `clickhouse local` binary, latest master build)
+- **chDB** - ClickHouse embedded in-process; same engine, same full precision
+- **NumPy** - Highly optimized with loop unrolling and vectorized operations
 - **DuckDB** - Excellent performance, proper DOUBLE precision
 - **Pure Python** - Reference implementation, just to have an idea how fast the database engines are
 - **SQLite** - Works but significantly slower due to recursive CTE overhead
