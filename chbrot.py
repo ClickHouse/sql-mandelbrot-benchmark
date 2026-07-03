@@ -1,26 +1,21 @@
 """
-ClickBrot - ClickHouse Mandelbrot Set Computation in Plain SQL
+chbrot - chDB Mandelbrot Set Computation in Plain SQL
 
-This is an implementation of the sql-mandelbrot-benchmark using ClickHouse.
+This is an implementation of the sql-mandelbrot-benchmark using chDB.
 It computes the classic Mandelbrot set in plain SQL — no loops, no procedural code, just pure SQL.
-
-How to install ClickHouse:
-```
-curl https://clickhouse.com/ | sh
-```
 
 Author: Alexey Milovidov
 License: MIT
 GitHub: https://github.com/Zeutschler/sql-mandelbrot-benchmark
 """
 
-import subprocess
+import chdb
 import numpy as np
-import io
+import pyarrow
 from utils import save_mandelbrot_image
 
 
-def run_clickbrot(width, height, max_iterations):
+def run_chbrot(width, height, max_iterations):
     """
     Compute Mandelbrot set using ClickHouse SQL with recursive CTEs.
 
@@ -64,22 +59,15 @@ def run_clickbrot(width, height, max_iterations):
     SELECT x, y, MAX(iteration) AS depth
     FROM mandelbrot_iterations
     GROUP BY x, y
-    FORMAT Arrow
     """
 
-    # Execute query using clickhouse local
-    result = subprocess.run(
-        ['clickhouse', 'local', '--query', mandelbrot_query],
-        capture_output=True,
-        check=True,
-    )
+    # Execute query
+    result = chdb.query(mandelbrot_query, output_format="ArrowTable")
 
-    # Read the Arrow output and scatter the depths into the image grid
-    import pyarrow as pa
-    table = pa.ipc.open_file(io.BytesIO(result.stdout)).read_all()
-    xs = table['x'].to_numpy()
-    ys = table['y'].to_numpy()
-    depth = table['depth'].to_numpy()
+    # Scatter the depths into the image grid by (x, y)
+    xs = result['x'].to_numpy()
+    ys = result['y'].to_numpy()
+    depth = result['depth'].to_numpy()
 
     mandelbrot = np.empty((height, width), dtype=np.uint32)
     mandelbrot[ys, xs] = depth
@@ -94,5 +82,5 @@ if __name__ == "__main__":
     MAX_ITERATIONS = 256
 
     print(f"Computing Mandelbrot set ({WIDTH}x{HEIGHT}, max {MAX_ITERATIONS} iterations)...")
-    result = run_clickbrot(WIDTH, HEIGHT, MAX_ITERATIONS)
-    save_mandelbrot_image(result, MAX_ITERATIONS, 'clickbrot.png')
+    result = run_chbrot(WIDTH, HEIGHT, MAX_ITERATIONS)
+    save_mandelbrot_image(result, MAX_ITERATIONS, 'chbrot.png')
