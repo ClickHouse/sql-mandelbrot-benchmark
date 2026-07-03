@@ -14,21 +14,10 @@ License: MIT
 GitHub: https://github.com/Zeutschler/sql-mandelbrot-benchmark
 """
 
-import os
 import subprocess
 import numpy as np
 import io
 from utils import save_mandelbrot_image
-
-# The recursive CTE allocates and frees a fresh block on every one of the 256 iterations.
-# On macOS the build's effective jemalloc `dirty_decay_ms` behaves like 0 (purge dirty pages
-# immediately), so every free triggers a madvise() syscall — and that syscall churn, not the
-# arithmetic, dominates the runtime (it also serializes the threads). Giving the decay a small
-# finite window lets jemalloc reuse those pages within the query instead of returning them to
-# the OS each cycle, which makes the query ~1.9x faster. 5 s is well above the query's runtime,
-# so pages are still returned to the OS shortly after the work finishes — unlike `-1` (never
-# decay), which would leak the working set for a long-running process.
-CLICKHOUSE_ENV = {**os.environ, "MALLOC_CONF": "dirty_decay_ms:5000"}
 
 
 def run_clickbrot(width, height, max_iterations):
@@ -83,7 +72,6 @@ def run_clickbrot(width, height, max_iterations):
         ['clickhouse', 'local', '--query', mandelbrot_query],
         capture_output=True,
         check=True,
-        env=CLICKHOUSE_ENV,
     )
 
     # Read the Arrow output and scatter the depths into the image grid

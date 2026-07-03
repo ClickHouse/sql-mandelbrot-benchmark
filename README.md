@@ -36,15 +36,15 @@ Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
 | 🏆 | Engine/Implementation                       | Time (ms)  | Relative Performance |
 |----|---------------------------------------------|------------|----------------------|
 | *  | Mac Metal GPU (unfair, but the true limit)¹ | 0.77 ms    | ∞ 😵                 |
-| 1  | ClickHouse (SQL)                            | 518 ms     | **0.52x** ⭐         |
-| 2  | NumPy (vectorized, unrolled)                | 715 ms     | 0.72x                |
-| 3  | chDB (SQL)                                  | 782 ms     | 0.79x                |
-| 4  | ArrowDatafusion (SQL)                       | 995 ms     | 1.00x (baseline)     |
-| 5  | DuckDB (SQL)                                | 2,011 ms   | 2.02x slower         |
-| 6  | FasterPybrot                                | 3,850 ms   | 3.87x slower         |
-| 7  | FastPybrot                                  | 4,370 ms   | 4.39x slower         |
-| 8  | Pure Python                                 | 5,049 ms   | 5.07x slower         |
-| 9  | SQLite (SQL)                                | 149,968 ms | 150.7x slower        |
+| 1  | ClickHouse (SQL)                            | 526 ms     | **0.51x** ⭐         |
+| 2  | NumPy (vectorized, unrolled)                | 719 ms     | 0.70x                |
+| 3  | chDB (SQL)                                  | 796 ms     | 0.78x                |
+| 4  | ArrowDatafusion (SQL)                       | 1,025 ms   | 1.00x (baseline)     |
+| 5  | DuckDB (SQL)                                | 2,045 ms   | 2.00x slower         |
+| 6  | FasterPybrot                                | 3,842 ms   | 3.75x slower         |
+| 7  | FastPybrot                                  | 4,369 ms   | 4.26x slower         |
+| 8  | Pure Python                                 | 5,039 ms   | 4.92x slower         |
+| 9  | SQLite (SQL)                                | 142,394 ms | 139.0x slower        |
 
 **Winner overall: ClickHouse** — the only engine to beat hand-vectorized NumPy, and by a comfortable margin. End-to-end wall-clock, including launching `clickhouse local` as a subprocess and reading the result back.
 
@@ -52,7 +52,7 @@ Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
 
 How ClickHouse gets there (all on the **latest master build**, `curl https://clickhouse.com/ | sh`):
 - **Parallelized recursive CTE.** Master fans the recursion's per-iteration work across all cores (~1.7x over a single thread); older builds ran it single-threaded.
-- **jemalloc page-decay tuning.** The recursion allocates and frees a block every iteration. On macOS the build's effective `dirty_decay_ms` behaves like `0` (purge dirty pages immediately), so every free triggers a `madvise()` syscall — pure syscall overhead that also serializes the threads, and it roughly *doubles* the runtime. `clickbrot.py` runs with `MALLOC_CONF=dirty_decay_ms:5000`, which lets jemalloc reuse those pages within the query while still returning them to the OS ~5 s later (so it's safe for a long-running process, unlike `dirty_decay_ms:-1`). This points at a real ClickHouse issue worth fixing upstream — the macOS default purges far too eagerly for an allocation-churning workload.
+- **A jemalloc fix in master.** The recursion allocates and frees a block every iteration. On macOS the jemalloc build used to set `dirty_decay_ms:0` (purge dirty pages immediately), so every free triggered a `madvise()` syscall — pure syscall overhead that also serialized the threads and roughly *doubled* the runtime. This benchmark surfaced the issue ([#108429](https://github.com/ClickHouse/ClickHouse/issues/108429)); it's now fixed in master ([#108430](https://github.com/ClickHouse/ClickHouse/pull/108430)) by enabling jemalloc's `background_thread` and a finite `dirty_decay_ms` on macOS, so **no allocator tuning is needed** — the numbers above are the plain master default.
 - **Lean query.** Only the pixel coordinates flow through the recursion (as narrow `UInt16`); the complex-plane mapping is recomputed on the fly, and the final `ORDER BY` is replaced by a NumPy scatter.
 
 `chDB` is the very same ClickHouse engine embedded in-process (its embedded 26.5.1 isn't built with jemalloc, so it never hits the decay issue, but its recursive CTE doesn't parallelize — hence it lands behind the parallel master binary). All SQL engines produce a pixel-for-pixel identical image.
