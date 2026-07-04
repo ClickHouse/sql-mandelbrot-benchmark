@@ -174,7 +174,8 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Credits
 
-Created by Thomas Zeutschler, Ulrich Ludmann, and Jakub Jirak (the grand master of GPU fractals)
+Created by Thomas Zeutschler, Ulrich Ludmann, and Jakub Jirak (the grand master of GPU fractals).
+Continued by Alexey Milovidov after Thomas Zeutschler [abandoned the original project](https://github.com/Zeutschler/sql-mandelbrot-benchmark/issues/5).
 
 Inspired by the mathematical beauty of the Mandelbrot set and the curiosity about SQL engine performance.
 
