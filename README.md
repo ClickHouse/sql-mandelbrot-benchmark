@@ -11,7 +11,7 @@ for testing recursive query performance, floating-point precision, and computati
 
 A benchmark suite that:
 - Computes the famous [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set) using SQL recursive CTEs
-- Tests multiple SQL engines — ClickHouse, chDB, DuckDB, ArrowDatafusion, SQLite — plus NumPy and Python implementations for reference.
+- Tests multiple SQL engines — ClickHouse, chDB, CedarDB, DuckDB, ArrowDatafusion, SQLite — plus NumPy and Python implementations for reference.
 - Generates beautiful fractal images as proof of correct computation
 - Reveals which database / SQL engine renders infinity fastest
 
@@ -29,6 +29,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Two engines need a bit of setup (the suite skips any engine that isn't available):
+- **ClickHouse** — install the latest build: `curl https://clickhouse.com/ | sh` (puts `clickhouse` on your `PATH`).
+- **CedarDB** — start it in Docker before running: `docker run --rm -p 5432:5432 -e CEDAR_PASSWORD=postgres cedardb/cedardb:latest`. CedarDB auto-sizes its working memory to the RAM visible to the container, and the recursive CTE needs a few GB; on macOS/Docker-Desktop give the VM enough memory (≥ ~16 GB) or the query fails with `unable to allocate working memory`.
+
 ## Current Benchmark Results
 
 Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
@@ -36,19 +40,20 @@ Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
 | 🏆 | Engine/Implementation                       | Time (ms)  | Relative Performance |
 |----|---------------------------------------------|------------|----------------------|
 | *  | Mac Metal GPU (unfair, but the true limit)¹ | 0.77 ms    | ∞ 😵                 |
-| 1  | ClickHouse (SQL)                            | 526 ms     | **0.51x** ⭐         |
-| 2  | NumPy (vectorized, unrolled)                | 719 ms     | 0.70x                |
-| 3  | chDB (SQL)                                  | 796 ms     | 0.78x                |
-| 4  | ArrowDatafusion (SQL)                       | 1,025 ms   | 1.00x (baseline)     |
-| 5  | DuckDB (SQL)                                | 2,045 ms   | 2.00x slower         |
-| 6  | FasterPybrot                                | 3,842 ms   | 3.75x slower         |
-| 7  | FastPybrot                                  | 4,369 ms   | 4.26x slower         |
-| 8  | Pure Python                                 | 5,039 ms   | 4.92x slower         |
-| 9  | SQLite (SQL)                                | 142,394 ms | 139.0x slower        |
+| 1  | ClickHouse (SQL)                            | 518 ms     | **0.52x** ⭐         |
+| 2  | NumPy (vectorized, unrolled)                | 688 ms     | 0.69x                |
+| 3  | chDB (SQL)                                  | 745 ms     | 0.75x                |
+| 4  | CedarDB (SQL)                               | 835 ms     | 0.84x                |
+| 5  | ArrowDatafusion (SQL)                       | 998 ms     | 1.00x (baseline)     |
+| 6  | DuckDB (SQL)                                | 1,954 ms   | 1.96x slower         |
+| 7  | FasterPybrot                                | 3,789 ms   | 3.80x slower         |
+| 8  | FastPybrot                                  | 4,211 ms   | 4.22x slower         |
+| 9  | Pure Python                                 | 4,833 ms   | 4.84x slower         |
+| 10 | SQLite (SQL)                                | 144,421 ms | 144.7x slower        |
 
 **Winner overall: ClickHouse** — the only engine to beat hand-vectorized NumPy, and by a comfortable margin. End-to-end wall-clock, including launching `clickhouse local` as a subprocess and reading the result back.
 
-**Winner SQL: ClickHouse** — ~1.9x faster than the next SQL engine (ArrowDatafusion), and ~3.9x faster than DuckDB.
+**Winner SQL: ClickHouse** — CedarDB is the fastest non-ClickHouse SQL engine (835 ms), yet ClickHouse is still ~1.6x ahead of it and ~3.8x faster than DuckDB.
 
 How ClickHouse gets there (all on the **latest master build**, `curl https://clickhouse.com/ | sh`):
 - **Parallelized recursive CTE.** Master fans the recursion's per-iteration work across all cores (~1.7x over a single thread); older builds ran it single-threaded.
@@ -133,6 +138,7 @@ Higher values = more detail, longer computation time.
 ### ✅ Works Great
 - **ClickHouse** - The fastest engine in the benchmark, beating even vectorized NumPy. Full `Float64` precision, parallelized recursive CTE across all cores (run via the standalone `clickhouse local` binary, latest master build)
 - **chDB** - ClickHouse embedded in-process; same engine, same full precision
+- **CedarDB** - Fastest non-ClickHouse SQL engine; speaks the PostgreSQL wire protocol (connect via psycopg), run in Docker
 - **NumPy** - Highly optimized with loop unrolling and vectorized operations
 - **DuckDB** - Excellent performance, proper DOUBLE precision
 - **Pure Python** - Reference implementation, just to have an idea how fast the database engines are
