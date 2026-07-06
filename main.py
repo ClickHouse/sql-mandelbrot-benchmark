@@ -25,6 +25,7 @@ BENCHMARKS = [
     ("ArrowDatafusion (SQL)", "arrow_datafusion", "run_arrow_datafusion"),
     ("CedarDB (SQL)", "cedarbrot", "run_cedarbrot"),
     ("DuckDB (SQL)", "duckbrot", "run_duckbrot"),
+    ("Arc (SQL, HTTP+Arrow)", "arcbrot", "run_arcbrot"),
     ("FastPybrot", "fastpybrot", "run_pybrot"),
     ("FasterPybrot", "fasterpybrot", "run_pybrot"),
     ("Pure Python", "pybrot", "run_pybrot"),

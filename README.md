@@ -29,9 +29,18 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Two engines need a bit of setup (the suite skips any engine that isn't available):
+A few engines need a bit of setup (the suite skips any engine that isn't available):
 - **ClickHouse** — install the latest build: `curl https://clickhouse.com/ | sh` (puts `clickhouse` on your `PATH`).
 - **CedarDB** — start it in Docker before running: `docker run --rm -p 5432:5432 -e CEDAR_PASSWORD=postgres cedardb/cedardb:latest`. CedarDB auto-sizes its working memory to the RAM visible to the container, and the recursive CTE needs a few GB; on macOS/Docker-Desktop give the VM enough memory (≥ ~16 GB) or the query fails with `unable to allocate working memory`.
+- **Arc** — start a local Arc server ([build instructions](https://github.com/Basekick-Labs/arc)) with auth and telemetry off, then leave it running while the suite executes:
+  ```bash
+  ARC_AUTH_ENABLED=false \
+  ARC_TELEMETRY_ENABLED=false \
+  ARC_STORAGE_LOCAL_PATH=/tmp/arc-mandelbrot/data \
+  ARC_AUTH_DB_PATH=/tmp/arc-mandelbrot/arc.db \
+  ./arc
+  ```
+  The Arc binary must be built with the `duckdb_arrow` tag (Arc's `make build` does this by default) so the `/api/v1/query/arrow` endpoint is available. Point the benchmark at a non-default host with `ARC_URL` (default `http://localhost:8000`).
 
 ## Current Benchmark Results
 
@@ -45,11 +54,12 @@ Current results on 1400x800 pixels, 256 max iterations, MacBook Pro M3 Max:
 | 3  | chDB (SQL)                                  | 745 ms     | 0.75x                |
 | 4  | CedarDB (SQL)                               | 835 ms     | 0.84x                |
 | 5  | ArrowDatafusion (SQL)                       | 998 ms     | 1.00x (baseline)     |
-| 6  | DuckDB (SQL)                                | 1,954 ms   | 1.96x slower         |
-| 7  | FasterPybrot                                | 3,789 ms   | 3.80x slower         |
-| 8  | FastPybrot                                  | 4,211 ms   | 4.22x slower         |
-| 9  | Pure Python                                 | 4,833 ms   | 4.84x slower         |
-| 10 | SQLite (SQL)                                | 144,421 ms | 144.7x slower        |
+| 6  | Arc (SQL, HTTP + Arrow)²                     | 1,589 ms   | 1.59x slower         |
+| 7  | DuckDB (SQL)                                | 1,954 ms   | 1.96x slower         |
+| 8  | FasterPybrot                                | 3,789 ms   | 3.80x slower         |
+| 9  | FastPybrot                                  | 4,211 ms   | 4.22x slower         |
+| 10 | Pure Python                                 | 4,833 ms   | 4.84x slower         |
+| 11 | SQLite (SQL)                                | 144,421 ms | 144.7x slower        |
 
 **Winner overall: ClickHouse** — the only engine to beat hand-vectorized NumPy, and by a comfortable margin. End-to-end wall-clock, including launching `clickhouse local` as a subprocess and reading the result back.
 
@@ -62,7 +72,11 @@ How ClickHouse gets there (all on the **latest master build**, `curl https://cli
 
 `chDB` is the very same ClickHouse engine embedded in-process (its embedded 26.5.1 isn't built with jemalloc, so it never hits the decay issue, but its recursive CTE doesn't parallelize — hence it lands behind the parallel master binary). All SQL engines produce a pixel-for-pixel identical image.
 
+**Arc** ([Basekick-Labs/arc](https://github.com/Basekick-Labs/arc)) is a columnar analytical database whose query engine *is* DuckDB, so it runs the DuckDB reference query unchanged. Unlike the `duckbrot` row — which embeds DuckDB in-process — the Arc row is the full **client-server** path: a JSON query POSTed over HTTP to a running Arc server, executed on DuckDB, and the ~1.1M-row result streamed back as an Apache Arrow IPC stream (`POST /api/v1/query/arrow`). It lands *faster* than the in-process `duckbrot` row here because the Arrow columnar result is materialized in bulk rather than row-by-row into Python objects, and the recursive-CTE compute — single-threaded in DuckDB — dwarfs the HTTP round-trip. In other words, Arc's server + columnar-wire overhead is negligible on a compute-bound query; the ceiling is DuckDB's single-threaded recursion, which is why Arc (like DuckDB) sits well behind ClickHouse's parallelized master build.
+
 ¹ The GPU figure is the original author's MacBook Pro M4 Max measurement, kept as the theoretical "true limit" reference; all other rows are re-measured on this M3 Max.
+
+² Arc re-measured on an Apple M3 Max (best of 5 warm runs, via the repo's own `run_benchmark` harness). Arc's engine is DuckDB v1.5.1; only this row was re-measured, so treat the Arc-vs-DuckDB gap as *client-server transport vs in-process*, not two different engines.
 
 ## How It Works
 
