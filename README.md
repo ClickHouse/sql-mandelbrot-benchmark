@@ -11,7 +11,7 @@ for testing recursive query performance, floating-point precision, and computati
 
 A benchmark suite that:
 - Computes the famous [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set) using SQL recursive CTEs
-- Tests multiple SQL engines — ClickHouse, chDB, CedarDB, DuckDB, ArrowDatafusion, SQLite — plus NumPy and Python implementations for reference.
+- Tests multiple SQL engines — ClickHouse, chDB, SereneDB, CedarDB, DuckDB, ArrowDatafusion, SQLite — plus NumPy and Python implementations for reference.
 - Generates beautiful fractal images as proof of correct computation
 - Reveals which database / SQL engine renders infinity fastest
 
@@ -31,6 +31,7 @@ python main.py
 
 A few engines need a bit of setup (the suite skips any engine that isn't available):
 - **ClickHouse** — install the latest build: `curl https://clickhouse.com/ | sh` (puts `clickhouse` on your `PATH`).
+- **SereneDB** — start it in Docker before running: `docker run --rm -p 7890:7890 -e POSTGRES_PASSWORD=postgres serenedb/serenedb:latest` (PostgreSQL wire protocol on port 7890).
 - **CedarDB** — start it in Docker before running: `docker run --rm -p 5432:5432 -e CEDAR_PASSWORD=postgres cedardb/cedardb:latest`. CedarDB auto-sizes its working memory to the RAM visible to the container, and the recursive CTE needs a few GB; on macOS/Docker-Desktop give the VM enough memory (≥ ~16 GB) or the query fails with `unable to allocate working memory`.
 - **Arc** — start a local Arc server ([build instructions](https://github.com/Basekick-Labs/arc)) with auth and telemetry off, then leave it running while the suite executes:
   ```bash
@@ -152,6 +153,7 @@ Higher values = more detail, longer computation time.
 ### ✅ Works Great
 - **ClickHouse** - The fastest engine in the benchmark, beating even vectorized NumPy. Full `Float64` precision, parallelized recursive CTE across all cores (run via the standalone `clickhouse local` binary, latest master build)
 - **chDB** - ClickHouse embedded in-process; same engine, same full precision
+- **SereneDB** - A server built on a fork of DuckDB's engine, so it runs the DuckDB reference query unchanged, with the recursive CTE on all cores; speaks the PostgreSQL wire protocol (connect via psycopg) and returns the result as Parquet over `COPY ... TO STDOUT`, run in Docker
 - **CedarDB** - Fastest non-ClickHouse SQL engine; speaks the PostgreSQL wire protocol (connect via psycopg), run in Docker
 - **NumPy** - Highly optimized with loop unrolling and vectorized operations
 - **DuckDB** - Excellent performance, proper DOUBLE precision

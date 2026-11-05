@@ -23,6 +23,7 @@ BENCHMARKS = [
     ("chDB (SQL)", "chbrot", "run_chbrot"),
     ("NumPy (Vectorized)", "numpybrot", "run_numpybrot"),
     ("ArrowDatafusion (SQL)", "arrow_datafusion", "run_arrow_datafusion"),
+    ("SereneDB (SQL)", "serenebrot", "run_serenebrot"),
     ("CedarDB (SQL)", "cedarbrot", "run_cedarbrot"),
     ("DuckDB (SQL)", "duckbrot", "run_duckbrot"),
     ("Arc (SQL, HTTP+Arrow)", "arcbrot", "run_arcbrot"),
